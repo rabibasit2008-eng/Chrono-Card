@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Card Chrono</title>
+<link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+<style>
+:root { --size:90px; --accent:#f59e0b; --bg:#0b1220; --card:#162032; }
+body{margin:0;font-family:Inter, Arial, sans-serif;background:var(--bg);color:#dbeafe;display:flex;justify-content:center;padding:20px}
+.app{max-width:980px;width:100%;background:rgba(255,255,255,0.03);padding:20px;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.4)}
+header{display:flex;align-items:center;justify-content:space-between;gap:10px}
+header h1{margin:0}
+.controls{display:flex;gap:8px;align-items:center}
+.stats{margin-top:12px}
+.board{display:grid;gap:10px;justify-content:center;margin-top:15px}
+.card{width:var(--size);height:var(--size);perspective:900px;cursor:pointer}
+.card-inner{width:100%;height:100%;position:relative;transform-style:preserve-3d;transition:transform .35s}
+.flipped .card-inner{transform:rotateY(180deg)}
+.side{position:absolute;inset:0;border-radius:8px;backface-visibility:hidden;display:flex;align-items:center;justify-content:center;font-weight:700}
+.front{background:var(--card);color:#fff;font-size:20px}
+.back{background:#fff;color:#000;transform:rotateY(180deg);font-size:20px;border:2px solid #222}
+.matched{opacity:0.35;pointer-events:none}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center}
+.modal.show{display:flex}
+.panel{background:var(--bg);padding:24px;border-radius:10px;width:320px;text-align:center}
+.stars{font-size:28px;margin-bottom:10px}
+.small{font-size:13px;color:#bcd7ff}
+button:disabled{opacity:0.5;cursor:not-allowed;}
+@media (max-width:520px){:root{--size:64px}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Chrono Card</h1>
+    <div class="controls">
+      <label class="small">Level:
+        <select id="levelSelect"></select>
+      </label>
+      <button id="startBtn" style="background:var(--accent);color:#07101a;padding:8px 12px;border-radius:8px;border:none;font-weight:700">Start</button>
+      <button id="backBtn" style="padding:8px 12px;border-radius:8px;border:none;background:transparent;border:1px solid #2b3b4a;color:#dbeafe">Back</button>
+    </div>
+  </header>
+
+  <div class="stats small">
+    <div>Time Left: <b id="time">0</b>s &nbsp; • &nbsp; Moves: <b id="moves">0</b> &nbsp; • &nbsp; Pairs: <b id="pairs">0</b></div>
+    <div style="margin-top:6px">Stars: <span id="liveStars">—</span></div>
+  </div>
+
+  <div id="board" class="board"></div>
+</div>
+
+<div id="modal" class="modal" aria-hidden="true">
+  <div class="panel">
+    <h3 id="endTitle">You Win!</h3>
+    <div class="stars" id="starRating">⭐⭐⭐</div>
+    <p class="small">Time Left: <b id="finalTime"></b>s • Moves: <b id="finalMoves"></b></p>
+    <div style="display:flex;gap:8px;justify-content:center;margin-top:12px">
+      <button id="nextBtn" style="background:var(--accent);color:#07101a;padding:8px 12px;border-radius:8px;border:none;font-weight:700">Next Level</button>
+      <button id="retryBtn" style="padding:8px 12px;border-radius:8px;border:none;background:transparent;border:1px solid #2b3b4a;color:#dbeafe">Retry</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ================= CONFIG ================= */
+const LEVELS = [
+  { rows:2, cols:2, time:25, label:"Level 1 — 2×2 — 25s"},
+  { rows:2, cols:2, time:20, label:"Level 2 — 2×2 — 20s"},
+  { rows:3, cols:4, time:45, label:"Level 3 — 3×4 — 45s"},
+  { rows:4, cols:4, time:60, label:"Level 4 — 4×4 — 60s"},
+  { rows:4, cols:5, time:70, label:"Level 5 — 4×5 — 70s"},
+  { rows:5, cols:6, time:110, label:"Level 6 — 5×6 — 110s"},
+  { rows:6, cols:6, time:130, label:"Level 7 — 6×6 — 130s"},
+  { rows:6, cols:7, time:150, label:"Level 8 — 6×7 — 150s"},
+  { rows:7, cols:7, time:180, label:"Level 9 — 7×7 — 158s"},
+  { rows:8, cols:8, time:240, label:"Level 10 — 8×8 — 240s"}
+];
+
+const IMAGE_PATH_LOCAL_BASE = "images/cards/";
+const IMAGE_PATH_CDN_BASE = "https://deckofcardsapi.com/static/img/";
+const RANKS = ["A","K","Q","J","10","9","8","7","6","5","4","3","2"];
+const SUITS = ["S","H","D","C"];
+const ALL_CARDS = [];
+for(const s of SUITS){ for(const r of RANKS){ ALL_CARDS.push(`${r}${s}`); } }
+
+/* Audio */
+const audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+const playTone=(f,d=0.12,t="sine",g=0.12)=>{const o=audioCtx.createOscillator(),gain=audioCtx.createGain(); o.type=t;o.frequency.value=f; gain.gain.value=0;o.connect(gain);gain.connect(audioCtx.destination); o.start(); gain.gain.linearRampToValueAtTime(g,audioCtx.currentTime+0.01); gain.gain.exponentialRampToValueAtTime(0.0001,audioCtx.currentTime+d); o.stop(audioCtx.currentTime+d+0.02);}
+const sFlip=()=>playTone(880,0.06,"triangle",0.06);
+const sMatch=()=>{playTone(980,0.12,"sine",0.12);playTone(1320,0.08,"sine",0.06);}
+const sFail=()=>playTone(220,0.12,"sawtooth",0.12);
+const sWin=()=>{playTone(1320,0.12,"sine",0.14);playTone(1760,0.18,"sine",0.1);}
+
+/* ================= STATE ================= */
+const boardEl=document.getElementById("board"),
+      levelSelect=document.getElementById("levelSelect"),
+      startBtn=document.getElementById("startBtn"),
+      backBtn=document.getElementById("backBtn"),
+      timeEl=document.getElementById("time"),
+      movesEl=document.getElementById("moves"),
+      pairsEl=document.getElementById("pairs"),
+      liveStarsEl=document.getElementById("liveStars"),
+      modal=document.getElementById("modal"),
+      endTitle=document.getElementById("endTitle"),
+      finalTime=document.getElementById("finalTime"),
+      finalMoves=document.getElementById("finalMoves"),
+      starRating=document.getElementById("starRating"),
+      nextBtn=document.getElementById("nextBtn"),
+      retryBtn=document.getElementById("retryBtn");
+
+let levelIndex=0, moves=0, pairs=0, totalPairs=0, timeLeft=0, timerId=null, first=null, second=null, lock=false;
+
+/* ================= UTIL ================= */
+function shuffle(arr){for(let i=arr.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[arr[i],arr[j]]=[arr[j],arr[i]]} return arr;}
+function cardImageUrl(code){return {local:`${IMAGE_PATH_LOCAL_BASE}${code}.png`,cdn:`${IMAGE_PATH_CDN_BASE}${code}.png`};}
+async function preloadImages(codes){ 
+  return Promise.all(codes.map(code=>new Promise(resolve=>{
+    const {local,cdn}=cardImageUrl(code); 
+    const img=new Image(); 
+    img.onload=()=>resolve({code,url:local}); 
+    img.onerror=()=>{
+      img.src=cdn; 
+      img.onload=()=>resolve({code,url:cdn}); 
+      img.onerror=()=>resolve({code,url:null});
+    }; 
+    img.src=local; 
+  })));
+}
+
+/* ================= LEVEL SELECT ================= */
+function initLevelSelect(){
+  const highestLevel=parseInt(localStorage.getItem("highestLevel"))||0;
+  LEVELS.forEach((lvl,i)=>{
+    const opt=document.createElement("option"); 
+    opt.value=i; 
+    opt.textContent=lvl.label;
+    if(i>highestLevel) opt.disabled=true;
+    levelSelect.appendChild(opt);
+  });
+  levelSelect.value=highestLevel;
+}
+
+/* ================= GAME LOGIC ================= */
+async function startLevel(){
+  try{ if(audioCtx.state==='suspended') await audioCtx.resume(); }catch(e){}
+  clearInterval(timerId); 
+  boardEl.innerHTML=""; 
+  first=second=null; 
+  lock=false;
+
+  levelIndex=parseInt(levelSelect.value,10);
+  const L=LEVELS[levelIndex];
+
+  boardEl.style.gridTemplateColumns=`repeat(${L.cols}, var(--size))`;
+  boardEl.style.gridTemplateRows=`repeat(${L.rows}, var(--size))`;
+
+  totalPairs=Math.floor((L.rows*L.cols)/2);
+
+  const deckCodes=shuffle([...ALL_CARDS]).slice(0,totalPairs);
+  const fullCodes=shuffle([...deckCodes,...deckCodes]);
+  const preload=await preloadImages(deckCodes);
+  const map=Object.fromEntries(preload.map(p=>[p.code,p.url]));
+
+  fullCodes.forEach(code=>{
+    const card=document.createElement("div"); 
+    card.className="card"; 
+    card.dataset.face=code;
+    const backInner=map[code]?`<img src="${map[code]}" alt="${code}" style="max-width:86%;max-height:86%"/>`:`<div style="font-size:18px">${code}</div>`;
+    card.innerHTML=`<div class="card-inner"><div class="side front">?</div><div class="side back">${backInner}</div></div>`;
+    card.addEventListener("click",()=>onCardClick(card));
+    boardEl.appendChild(card);
+  });
+
+  moves=0; pairs=0; movesEl.textContent=moves; pairsEl.textContent=pairs;
+  startTimer(L.time); updateLiveStars();
+  nextBtn.disabled = true; // disable Next until win
+}
+
+function onCardClick(card){
+  if(lock || card.classList.contains("flipped") || card.classList.contains("matched")) return;
+  sFlip(); card.classList.add("flipped");
+  if(!first){first=card; return;}
+  second=card; lock=true; moves++; movesEl.textContent=moves;
+  if(first.dataset.face===second.dataset.face){ 
+    sMatch(); first.classList.add("matched"); second.classList.add("matched"); pairs++; pairsEl.textContent=pairs; resetTurn(); 
+    if(pairs===totalPairs) win(); 
+  } else{ 
+    sFail(); 
+    setTimeout(()=>{ first.classList.remove("flipped"); second.classList.remove("flipped"); resetTurn(); },700);
+  }
+}
+
+function resetTurn(){first=null; second=null; lock=false;}
+
+function startTimer(seconds){ 
+  clearInterval(timerId); 
+  timeLeft=seconds; 
+  timeEl.textContent=timeLeft;
+  timerId=setInterval(()=>{
+    timeLeft--; 
+    timeEl.textContent=timeLeft; 
+    updateLiveStars(); 
+    if(timeLeft<=0){ clearInterval(timerId); gameOver(); }
+  },1000);
+}
+
+function computeStars(){ const L=LEVELS[levelIndex]; const ratio=timeLeft/L.time; return ratio>0.6?3:ratio>0.3?2:1; }
+function updateLiveStars(){ const s=computeStars(); liveStarsEl.textContent='★'.repeat(s)+'☆'.repeat(3-s); }
+
+function win(){
+  clearInterval(timerId); sWin(); endTitle.textContent="Level Completed!";
+  finalTime.textContent=timeLeft; finalMoves.textContent=moves;
+  const stars=computeStars(); starRating.textContent='★'.repeat(stars)+'☆'.repeat(3-stars); 
+  modal.classList.add("show");
+
+  // enable next button
+  nextBtn.disabled = false;
+
+  // update highest unlocked level
+  let highestLevel=parseInt(localStorage.getItem("highestLevel"))||0;
+  if(levelIndex >= highestLevel && levelIndex < LEVELS.length-1) 
+      localStorage.setItem("highestLevel",levelIndex+1);
+  updateLevelSelect();
+}
+
+function gameOver(){ 
+  endTitle.textContent="Time's Up!"; 
+  finalTime.textContent=0; finalMoves.textContent=moves; 
+  starRating.textContent='☆☆☆'; 
+  modal.classList.add("show");
+  nextBtn.disabled = true; 
+}
+
+function updateLevelSelect(){
+  const highestLevel=parseInt(localStorage.getItem("highestLevel"))||0;
+  for(let i=0;i<levelSelect.options.length;i++){ levelSelect.options[i].disabled=i>highestLevel; }
+}
+
+/* ================= NAVIGATION ================= */
+startBtn.addEventListener("click",startLevel);
+backBtn.addEventListener("click",()=>{location.href="levels.html";});
+nextBtn.addEventListener("click",()=>{
+  modal.classList.remove("show");
+  const highestLevel=parseInt(localStorage.getItem("highestLevel"))||0;
+  if(levelIndex<highestLevel){ 
+    levelIndex++; 
+    levelSelect.value=levelIndex; 
+    startLevel(); 
+  }
+});
+retryBtn.addEventListener("click",()=>{ modal.classList.remove("show"); startLevel(); });
+
+/* ================= INIT ================= */
+function init(){ initLevelSelect(); updateLiveStars(); }
+init();
+</script>
+</body>
+</html>

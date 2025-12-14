@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chrono Card</title>
+<link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+<style>
+  :root { 
+    --accent:#f59e0b; 
+    --bg:#0b1220; 
+    --card:#162032; 
+    --locked:#444; 
+  }
+
+  body{
+    margin:0;
+    font-family:Inter, Arial, sans-serif;
+    background:var(--bg);
+    color:#dbeafe;
+    display:flex;
+    justify-content:center;
+    padding:20px;
+  }
+
+  h1{
+    text-align:center;
+    margin-bottom:30px;
+    font-size:28px;
+  }
+
+  .levels{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
+    gap:16px;
+    max-width:960px;
+    width:100%;
+    animation:fadeIn 0.5s ease-out;
+  }
+
+  .level{
+    background:var(--card);
+    border-radius:10px;
+    padding:20px;
+    text-align:center;
+    cursor:pointer;
+    transition:transform .2s, box-shadow .2s;
+    position:relative;
+    opacity:0;
+    animation:fadeIn 0.5s forwards;
+  }
+
+  .level:hover{
+    transform:translateY(-4px);
+    box-shadow:0 8px 20px rgba(0,0,0,.4);
+  }
+
+  .level.locked{
+    background:var(--locked);
+    cursor:not-allowed;
+  }
+
+  .level h2{
+    margin:0 0 8px 0;
+    font-size:18px;
+  }
+
+  .level span{
+    font-size:14px;
+    color:#bcd7ff;
+  }
+
+  .lock-icon{
+    position:absolute;
+    top:10px;
+    right:10px;
+    font-size:18px;
+  }
+
+  button{
+    display:block;
+    margin:30px auto 0 auto;
+    padding:10px 20px;
+    border:none;
+    border-radius:8px;
+    background:var(--accent);
+    color:#07101a;
+    font-weight:700;
+    cursor:pointer;
+    transition:transform .2s, box-shadow .2s;
+  }
+
+  button:hover{
+    transform:translateY(-2px);
+    box-shadow:0 6px 16px rgba(0,0,0,.4);
+  }
+
+  @keyframes fadeIn{
+    from {opacity:0; transform: translateY(10px);}
+    to {opacity:1; transform: translateY(0);}
+  }
+</style>
+</head>
+<body>
+<div>
+<h1>Chrono Card — Levels</h1>
+<div class="levels" id="levelsContainer"></div>
+<button id="backBtn">Back to Main Menu</button>
+</div>
+
+<script>
+const LEVELS = [
+  {rows:2, cols:2, label:"Level 1 — 2×2"},
+  {rows:2, cols:2, label:"Level 2 — 2×2"},
+  {rows:3, cols:4, label:"Level 3 — 3×4"},
+  {rows:4, cols:4, label:"Level 4 — 4×4"},
+  {rows:4, cols:5, label:"Level 5 — 4×5"},
+  {rows:5, cols:6, label:"Level 6 — 5×6"},
+  {rows:6, cols:6, label:"Level 7 — 6×6"},
+  {rows:6, cols:7, label:"Level 8 — 6×7"},
+  {rows:7, cols:7, label:"Level 9 — 7×7"},
+  {rows:8, cols:8, label:"Level 10 — 8×8"}
+];
+
+// Get highest unlocked level from localStorage
+const highestLevel = parseInt(localStorage.getItem("highestLevel")) || 0;
+
+const levelsContainer = document.getElementById("levelsContainer");
+
+// Create level buttons
+LEVELS.forEach((lvl, i) => {
+  const div = document.createElement("div");
+  div.className = "level" + (i > highestLevel ? " locked" : "");
+  div.style.animationDelay = `${i*0.05}s`; // staggered fade-in
+  div.innerHTML = `<h2>${lvl.label}</h2>` + 
+                  (i > highestLevel ? `<div class="lock-icon">🔒</div>` : `<span>Click to Play</span>`);
+
+  // Only clickable if unlocked
+  if(i <= highestLevel){
+    div.addEventListener("click", ()=>{ 
+      location.href = `game.html?level=${i}`; 
+    });
+  }
+
+  levelsContainer.appendChild(div);
+});
+
+// Back button
+document.getElementById("backBtn").addEventListener("click", ()=>{
+  location.href = "index.html"; // or your main menu page
+});
+</script>
+</body>
+</html>
